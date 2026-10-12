@@ -1,55 +1,45 @@
 # Automated Inline Analytics
 
-A modular Python framework for **automated inline calibration and validated sample measurement in continuous-flow systems**.
+A modular Python framework for **automated inline calibration and validated real-sample measurement in continuous-flow systems**.
 
-The project was developed as a standalone prototype for inline UV–Vis analytics using:
+The package was developed as a reusable standalone tool for inline analytics and is designed so it can later be integrated into larger autonomous experimentation platforms.
 
-- **HiTec Zang pumps** controlled through **OPC Expert HTTP**
-- **Spectragryph** for continuous UV–Vis spectrum acquisition and file export
+The current implementation uses:
+
+- **HiTec Zang pumps** controlled through the **OPC Expert HTTP interface**
+- **Spectragryph** for continuous UV–Vis acquisition and CSV export
 - Python for:
-  - automated calibration
-  - inline dilution
+  - automated inline calibration
+  - pump-based dilution
   - replicate acquisition
   - CV-based quality control
   - linear regression
-  - calibration model storage
+  - calibration-model storage
   - real-sample concentration calculation
+  - calibration-range checking
   - persistent result logging
 
-The current implementation uses methylene blue as a model system, but the architecture is designed to be reusable for other inline analytical applications.
+The current test system uses methylene blue as a model analyte, but the software architecture is intended to be reusable for other inline analytical workflows.
 
 ---
 
-## Workflow
+## Software workflow
 
-![Automated Inline Analytics Workflow](assets/automated_inline_analytics_workflow.png)
+![Automated Inline Analytics Workflow](assets/automated_inline_analytics_workflow_infographic.png)
 
-The software supports two main workflows:
+The software is intended to be used in two main modes:
 
-1. **Run calibration**
-   - Calculate stock and water flow rates
-   - Set pump flow rates automatically
-   - Wait for the selected condition
-   - Collect 5 replicate spectra
-   - Calculate mean absorbance, standard deviation, and CV
-   - If CV > 5%, acquire one additional spectrum
-   - Keep the latest 5 values and recalculate CV
-   - Repeat until the CV criterion is satisfied or the maximum number of extra measurements is reached
-   - Fit a linear calibration model
-   - Save the calibration curve, raw results, and calibration model
+```text
+1 - Run calibration
+2 - Measure real sample
+3 - Exit
+```
 
-2. **Measure real sample**
-   - Load the saved calibration model
-   - Read the latest UV–Vis spectra exported by Spectragryph
-   - Collect 5 replicate measurements
-   - Apply the same CV-based validation strategy
-   - Calculate concentration from the saved calibration
-   - Check whether the result lies inside the calibration range
-   - Append the result to `sample_results.csv`
+A calibration does not need to be repeated every time the software is started. Once a valid calibration has been created and saved as `calibration_model.json`, the software can directly perform real-sample measurements using that model.
 
 ---
 
-## Project structure
+## Repository structure
 
 ```text
 automated-inline-analytics/
@@ -58,6 +48,7 @@ automated-inline-analytics/
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
+├── config.example.json
 │
 ├── CalibrationExperiment/
 │   ├── __init__.py
@@ -80,89 +71,167 @@ automated-inline-analytics/
 │   └── spectragryph_reader.py
 │
 └── assets/
-    └── automated_inline_analytics_workflow.png
+    └── automated_inline_analytics_workflow_infographic.png
 ```
 
 ---
 
-## Main components
+## Quick start
 
-### `PumpController`
+### 1. Clone the repository
 
-Handles pump communication through the OPC Expert HTTP interface.
-
-Main functions:
-
-```python
-set_flow(pump, flow)
-stop(pump)
-stop_all()
+```bash
+git clone <repository-url>
+cd automated-inline-analytics
 ```
 
-A non-zero value written to the pump `W1` tag starts the pump. Writing `0` stops it.
+### 2. Create a local configuration file
 
-The current implementation also handles the decimal-separator requirement of the OPC interface.
+Copy:
+
+```text
+config.example.json
+```
+
+to:
+
+```text
+config.json
+```
+
+Then adapt `config.json` to the local experimental setup.
+
+The real `config.json` is excluded from version control because it may contain machine-specific paths or internal hardware addresses.
+
+### 3. Install dependencies
+
+Python 3.10+ is recommended.
+
+```bash
+pip install -r requirements.txt
+```
+
+Current dependencies:
+
+```text
+requests
+numpy
+pandas
+scipy
+matplotlib
+```
+
+### 4. Configure Spectragryph
+
+Spectragryph should:
+
+- acquire spectra continuously
+- save every acquisition automatically
+- export spectra as CSV
+- use automatic filename incrementing
+
+Example:
+
+```text
+my_acquired_spectra_001.csv
+my_acquired_spectra_002.csv
+my_acquired_spectra_003.csv
+```
+
+The default file pattern used by the software is:
+
+```text
+my_acquired_spectra_*.csv
+```
+
+### 5. Run the software
+
+```bash
+python main.py
+```
 
 ---
 
-### `SpectragryphReader`
+# Configuration
 
-Reads continuously exported Spectragryph CSV files.
+The package uses `config.json` for experiment- and machine-specific settings.
 
-Main functions:
+Example structure:
 
-```python
-get_latest_file()
-wait_until_file_ready()
-read_spectrum(file_path)
-get_absorbance(file_path, wavelength)
-get_latest_absorbance(wavelength)
-get_band_average(file_path, center, half_width)
+```json
+{
+    "opc": {
+        "host": "http://YOUR_OPC_EXPERT_HOST:57080",
+        "area": "E_CHEM"
+    },
+    "spectragryph": {
+        "spectra_folder": "C:\\path\\to\\Spectragryph\\exports",
+        "file_pattern": "my_acquired_spectra_*.csv"
+    },
+    "pumps": {
+        "stock_pump": "PUMP1",
+        "water_pump": "PUMP2"
+    },
+    "calibration": {
+        "stock_concentration": 400.0,
+        "total_flow": 2.0,
+        "target_concentrations": [0, 80, 160, 240, 280, 320],
+        "target_wavelength": 664.0,
+        "wait_time": 60,
+        "n_replicates": 5,
+        "replicate_interval": 2.0,
+        "cv_threshold": 5.0,
+        "max_extra_measurements": 10
+    },
+    "sample_measurement": {
+        "n_replicates": 5,
+        "replicate_interval": 2.0,
+        "cv_threshold": 5.0,
+        "max_extra_measurements": 10
+    },
+    "output": {
+        "calibration_results_file": "calibration_results.csv",
+        "calibration_plot_file": "calibration_curve.png",
+        "calibration_model_file": "calibration_model.json",
+        "sample_results_file": "sample_results.csv"
+    }
+}
 ```
-
-Spectragryph performs the acquisition independently. Python reads the most recently available spectrum when a measurement is required.
 
 ---
 
-### `CalibrationExperiment`
+# Calibration workflow
 
-Coordinates the calibration experiment.
+Selecting:
 
-Main functions:
-
-```python
-calculate_flows(target_concentration)
-calculate_statistics(absorbance_values)
-run_condition(target_concentration)
-run_calibration(concentrations)
+```text
+1 - Run calibration
 ```
 
-For each calibration standard, the software:
+starts the automated inline calibration.
 
-1. Calculates stock and water flow rates
-2. Writes the pump setpoints
-3. Waits for the new condition
-4. Collects replicate UV–Vis measurements
-5. Calculates mean, SD, and CV
-6. Applies the rolling CV acceptance criterion
-7. Stores the accepted result
+For each target concentration, the software:
 
----
+1. Calculates the required stock and water flow rates.
+2. Writes the new pump setpoints through OPC Expert.
+3. Waits for the specified settling time.
+4. Reads the latest UV–Vis spectrum exported by Spectragryph.
+5. Collects 5 replicate measurements.
+6. Calculates:
+   - mean absorbance
+   - standard deviation
+   - coefficient of variation (CV)
+7. Compares the CV against the acceptance threshold.
+8. If CV is above the threshold:
+   - one additional spectrum is collected
+   - only the latest 5 values are kept
+   - mean, SD, and CV are recalculated
+9. The process repeats until:
+   - CV is acceptable, or
+   - the maximum number of additional measurements is reached.
+10. The accepted calibration points are used for linear regression.
 
-### `DataAnalysis`
-
-Processes calibration results.
-
-Main functions:
-
-```python
-linear_regression()
-save_csv()
-plot_calibration()
-save_calibration_model()
-```
-
-The linear calibration follows:
+The current calibration model is:
 
 \[
 A = mC + b
@@ -172,14 +241,22 @@ where:
 
 - \(A\) = absorbance
 - \(C\) = concentration
-- \(m\) = calibration slope
+- \(m\) = slope
 - \(b\) = intercept
 
-The fitted model is saved to:
+---
+
+## Calibration outputs
+
+A calibration generates:
 
 ```text
+calibration_results.csv
+calibration_curve.png
 calibration_model.json
 ```
+
+The calibration model contains the fitted parameters required for later sample measurements.
 
 Example:
 
@@ -194,42 +271,78 @@ Example:
 }
 ```
 
+Because the model is stored separately, a new calibration is **not required every time the program is started**.
+
 ---
 
-### `SampleMeasurement`
+# Real-sample measurement workflow
 
-Uses a saved calibration model to determine the concentration of a real sample in flow.
+Selecting:
 
-Main functions:
-
-```python
-load_calibration_model()
-calculate_concentration(absorbance)
-check_calibration_range(concentration)
-calculate_statistics(absorbance_values)
-measure_sample()
-save_result(result)
+```text
+2 - Measure real sample
 ```
 
-Concentration is calculated from:
+loads the existing `calibration_model.json`.
+
+The software then:
+
+1. Loads:
+   - slope
+   - intercept
+   - \(R^2\)
+   - calibration range
+   - analytical wavelength
+2. Reads the real sample in flow through the UV–Vis cell.
+3. Collects 5 replicate spectra.
+4. Calculates mean absorbance, SD, and CV.
+5. Applies the same rolling CV validation used during calibration.
+6. Converts mean absorbance into concentration using:
 
 \[
 C = \frac{A-b}{m}
 \]
 
-The sample measurement uses the same replicate/CV validation strategy as the calibration.
+7. Checks whether the calculated concentration is:
+   - below the calibration range
+   - inside the valid calibration range
+   - above the calibration range
+8. Saves the result.
 
-Results are appended to:
+---
+
+## Sample result logging
+
+Every accepted sample measurement is appended to:
 
 ```text
 sample_results.csv
 ```
 
+The file can contain fields such as:
+
+```text
+timestamp
+wavelength
+absorbance
+absorbance_sd
+absorbance_cv
+concentration
+status
+accepted
+extra_measurements
+calibration_slope
+calibration_intercept
+calibration_r2
+```
+
+Previous measurements are preserved.
+
 ---
 
-## Quality-control logic
+# Quality-control strategy
 
-The default measurement validation uses:
+The current default measurement validation uses:
 
 ```text
 Initial measurements: 5
@@ -251,123 +364,107 @@ If:
 CV > 5\%
 \]
 
-the program:
+the software:
 
-1. Acquires one additional spectrum
-2. Removes the oldest measurement
-3. Keeps the latest 5 values
-4. Recalculates mean, SD, and CV
-5. Repeats until the criterion is satisfied or the maximum number of additional measurements is reached
+1. collects one new spectrum
+2. removes the oldest measurement
+3. keeps the latest 5 values
+4. recalculates mean, SD, and CV
+5. repeats until the criterion is satisfied or the maximum number of extra measurements is reached
 
-This provides a simple rolling-window quality-control strategy for inline measurements.
-
----
-
-## Installation
-
-Python 3.10+ is recommended.
-
-Install the required packages:
-
-```bash
-pip install requests numpy pandas scipy matplotlib
-```
-
-Or install from `requirements.txt`:
-
-```bash
-pip install -r requirements.txt
-```
+This rolling-window strategy provides basic self-validation of inline measurements.
 
 ---
 
-## Spectragryph configuration
+# Main modules
 
-Spectragryph should be configured to:
+## `PumpController`
 
-- acquire spectra continuously
-- save each acquisition automatically
-- export as CSV
-- use automatic filename incrementing
+Handles pump communication through OPC Expert.
 
-Example filename pattern:
+Main methods:
 
-```text
-my_acquired_spectra_001.csv
-my_acquired_spectra_002.csv
-my_acquired_spectra_003.csv
+```python
+set_flow(pump, flow)
+stop(pump)
+stop_all()
 ```
 
-The Python reader searches for:
+A non-zero value written to the pump flow setpoint starts the pump; zero stops it.
 
-```text
-my_acquired_spectra_*.csv
-```
+The implementation also handles the decimal-separator format required by the current OPC Expert setup.
 
 ---
 
-## Running the program
+## `SpectragryphReader`
 
-Start the application with:
+Reads continuously exported Spectragryph files.
 
-```bash
-python main.py
+Main methods:
+
+```python
+get_latest_file()
+wait_until_file_ready()
+read_spectrum(file_path)
+get_absorbance(file_path, wavelength)
+get_latest_absorbance(wavelength)
+get_band_average(file_path, center, half_width)
 ```
 
-The current command-line menu is:
+Spectragryph runs independently and continuously. Python simply accesses the latest available spectrum when a measurement is required.
 
-```text
-AUTOMATED INLINE UV-VIS SYSTEM
+---
 
-1 - Run calibration
-2 - Measure real sample
-3 - Exit
-```
+## `CalibrationExperiment`
 
-### Option 1 — Run calibration
+Coordinates automated calibration.
 
-Runs the full automated calibration and generates:
+Main methods:
 
-```text
-calibration_results.csv
-calibration_curve.png
-calibration_model.json
-```
-
-### Option 2 — Measure real sample
-
-Loads an existing `calibration_model.json`, performs replicate-based sample validation, calculates the concentration, checks the calibration range, and appends the result to:
-
-```text
-sample_results.csv
+```python
+calculate_flows(target_concentration)
+calculate_statistics(absorbance_values)
+run_condition(target_concentration)
+run_calibration(concentrations)
 ```
 
 ---
 
-## Configuration
+## `DataAnalysis`
 
-The current prototype contains system-specific settings in `main.py`, including:
+Handles calibration analysis.
 
-- OPC Expert host
-- OPC area
-- pump names
-- Spectragryph export folder
-- stock concentration
-- total flow
-- calibration concentrations
-- target wavelength
-- replicate settings
-- CV threshold
+Main methods:
 
-These should be adapted to the target setup before use.
-
-For a public or multi-system deployment, moving these values to a separate configuration file is recommended.
+```python
+linear_regression()
+save_csv()
+plot_calibration()
+save_calibration_model()
+```
 
 ---
 
-## Generated files
+## `SampleMeasurement`
 
-The software can generate:
+Loads the saved calibration and performs validated real-sample measurement.
+
+Main methods:
+
+```python
+load_calibration_model()
+calculate_concentration(absorbance)
+check_calibration_range(concentration)
+calculate_statistics(absorbance_values)
+measure_sample()
+save_result(result)
+```
+
+---
+
+# Generated files
+
+The software may generate:
 
 ```text
 calibration_results.csv
@@ -376,54 +473,66 @@ calibration_model.json
 sample_results.csv
 ```
 
-These files contain experimental results and are normally excluded from version control.
+These files are ignored by Git by default because they contain experiment-specific outputs.
 
 ---
 
-## Current status
+# Current status
 
-The standalone prototype currently supports:
+The standalone package currently supports:
 
 - automated inline calibration
-- automatic pump-based dilution
+- automated pump-based dilution for calibration standards
 - continuous Spectragryph file reading
-- replicate measurements
+- replicate UV–Vis measurements
 - mean / SD / CV calculation
 - rolling CV validation
-- linear regression
+- linear calibration fitting
 - calibration model storage
 - real-sample concentration calculation
 - calibration-range checking
 - persistent sample result logging
+- external configuration through `config.json`
 
 ---
 
-## Planned improvements
+# Planned improvements
 
 Potential future developments include:
 
-- automated waiting-time calculation based on flow and system volume
-- automatic sample dilution when concentration is above the calibration range
+- automated waiting-time calculation based on flow rate and system volume
+- automatic dilution of real samples above the calibration range
 - improved steady-state detection
-- calibration validity checks
-- user-selectable calibration models
-- richer metadata logging
+- calibration validity / drift checks
+- automatic blank handling
+- nonlinear or multivariate calibration models
+- support for multiple analytical wavelengths
+- metadata-rich experiment logging
 - graphical user interface
-- integration into larger autonomous flow-control software
-- support for additional inline analytical techniques
+- support for additional analytical techniques
+- integration into larger autonomous flow platforms such as VOL
 
 ---
 
-## Notes
+# Reusability
 
-This repository is intended as a reusable research software framework for automated inline analytics in continuous-flow experiments.
+Although the current demonstration uses inline UV–Vis spectroscopy, the software is intentionally modular.
 
-Hardware communication, file paths, analytical wavelengths, calibration ranges, and instrument-specific settings must be adapted to the local experimental setup.
+The same architecture can be adapted to:
+
+- other analytes
+- other concentration ranges
+- other pumps
+- other spectrometers
+- other process analytical technologies
+- other continuous-flow platforms
+
+The goal is to keep the analytical workflow independent enough that it can be reused as a standalone package or integrated into larger self-driving laboratory systems.
 
 ---
 
-## License
+# License
 
 A license has not yet been selected.
 
-Before public release, add an appropriate open-source license depending on the intended use and institutional requirements.
+Before public release, an appropriate open-source license should be chosen according to the intended use and institutional requirements.
