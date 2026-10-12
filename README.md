@@ -8,16 +8,7 @@ The current implementation uses:
 
 - **HiTec Zang pumps** controlled through the **OPC Expert HTTP interface**
 - **Spectragryph** for continuous UV–Vis acquisition and CSV export
-- Python for:
-  - automated inline calibration
-  - pump-based dilution
-  - replicate acquisition
-  - CV-based quality control
-  - linear regression
-  - calibration-model storage
-  - real-sample concentration calculation
-  - calibration-range checking
-  - persistent result logging
+- Python for automated inline calibration, pump-based dilution, replicate acquisition, CV-based quality control, linear regression, calibration-model storage, real-sample concentration calculation, calibration-range checking, and persistent result logging.
 
 The current test system uses methylene blue as a model analyte, but the software architecture is intended to be reusable for other inline analytical workflows.
 
@@ -49,6 +40,7 @@ automated-inline-analytics/
 ├── requirements.txt
 ├── .gitignore
 ├── config.example.json
+├── calibration_model.example.json
 │
 ├── CalibrationExperiment/
 │   ├── __init__.py
@@ -217,18 +209,10 @@ For each target concentration, the software:
 3. Waits for the specified settling time.
 4. Reads the latest UV–Vis spectrum exported by Spectragryph.
 5. Collects 5 replicate measurements.
-6. Calculates:
-   - mean absorbance
-   - standard deviation
-   - coefficient of variation (CV)
+6. Calculates mean absorbance, standard deviation, and coefficient of variation (CV).
 7. Compares the CV against the acceptance threshold.
-8. If CV is above the threshold:
-   - one additional spectrum is collected
-   - only the latest 5 values are kept
-   - mean, SD, and CV are recalculated
-9. The process repeats until:
-   - CV is acceptable, or
-   - the maximum number of additional measurements is reached.
+8. If CV is above the threshold, one additional spectrum is collected, only the latest 5 values are kept, and mean, SD, and CV are recalculated.
+9. The process repeats until the CV is acceptable or the maximum number of additional measurements is reached.
 10. The accepted calibration points are used for linear regression.
 
 The current calibration model is:
@@ -275,6 +259,58 @@ Because the model is stored separately, a new calibration is **not required ever
 
 ---
 
+# Using an existing calibration
+
+If an inline calibration is not required, the software can use an externally determined calibration model.
+
+Copy:
+
+```text
+calibration_model.example.json
+```
+
+to:
+
+```text
+calibration_model.json
+```
+
+and replace the example values with your own calibration parameters.
+
+The required fields are:
+
+- `slope`
+- `intercept`
+- `r2`
+- `range_min`
+- `range_max`
+- `wavelength`
+
+Example:
+
+```json
+{
+    "slope": 0.003794,
+    "intercept": 0.009579,
+    "r2": 0.9926,
+    "range_min": 0.0,
+    "range_max": 320.0,
+    "wavelength": 663.857
+}
+```
+
+Once `calibration_model.json` is present, the user can select:
+
+```text
+2 - Measure real sample
+```
+
+without running the inline calibration workflow first.
+
+This makes the package compatible with calibrations generated externally, manually, or by another analytical workflow.
+
+---
+
 # Real-sample measurement workflow
 
 Selecting:
@@ -287,12 +323,7 @@ loads the existing `calibration_model.json`.
 
 The software then:
 
-1. Loads:
-   - slope
-   - intercept
-   - \(R^2\)
-   - calibration range
-   - analytical wavelength
+1. Loads slope, intercept, \(R^2\), calibration range, and analytical wavelength.
 2. Reads the real sample in flow through the UV–Vis cell.
 3. Collects 5 replicate spectra.
 4. Calculates mean absorbance, SD, and CV.
@@ -303,10 +334,7 @@ The software then:
 C = \frac{A-b}{m}
 \]
 
-7. Checks whether the calculated concentration is:
-   - below the calibration range
-   - inside the valid calibration range
-   - above the calibration range
+7. Checks whether the calculated concentration is below, inside, or above the calibration range.
 8. Saves the result.
 
 ---
@@ -394,8 +422,6 @@ A non-zero value written to the pump flow setpoint starts the pump; zero stops i
 
 The implementation also handles the decimal-separator format required by the current OPC Expert setup.
 
----
-
 ## `SpectragryphReader`
 
 Reads continuously exported Spectragryph files.
@@ -413,8 +439,6 @@ get_band_average(file_path, center, half_width)
 
 Spectragryph runs independently and continuously. Python simply accesses the latest available spectrum when a measurement is required.
 
----
-
 ## `CalibrationExperiment`
 
 Coordinates automated calibration.
@@ -428,8 +452,6 @@ run_condition(target_concentration)
 run_calibration(concentrations)
 ```
 
----
-
 ## `DataAnalysis`
 
 Handles calibration analysis.
@@ -442,8 +464,6 @@ save_csv()
 plot_calibration()
 save_calibration_model()
 ```
-
----
 
 ## `SampleMeasurement`
 
@@ -489,6 +509,7 @@ The standalone package currently supports:
 - rolling CV validation
 - linear calibration fitting
 - calibration model storage
+- use of externally generated calibration models
 - real-sample concentration calculation
 - calibration-range checking
 - persistent sample result logging
