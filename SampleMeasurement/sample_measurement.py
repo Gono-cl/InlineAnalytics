@@ -29,7 +29,7 @@ class SampleMeasurement:
         self.cv_threshold = cv_threshold
         self.max_extra_measurements = max_extra_measurements
 
-        self.results_file = Path(results_file)
+        self.results_file = Path(results_file) if results_file is not None else None
 
         self.slope = None
         self.intercept = None
@@ -57,6 +57,7 @@ class SampleMeasurement:
 
             model = json.load(file)
 
+        self.calibration_model = model
         self.slope = model["slope"]
         self.intercept = model["intercept"]
         self.r2 = model["r2"]
@@ -140,7 +141,7 @@ class SampleMeasurement:
 
         else:
 
-            cv_absorbance = 0.0
+            cv_absorbance = 0.0 if sd_absorbance == 0 else float("inf")
 
 
         return (
@@ -158,6 +159,9 @@ class SampleMeasurement:
         self,
         result
     ):
+
+        if self.results_file is None:
+            return
 
         row = pd.DataFrame(
             [result]
@@ -460,7 +464,10 @@ class SampleMeasurement:
                 self.intercept,
 
             "calibration_r2":
-                self.r2
+                self.r2,
+
+            "replicates": absorbance_values.copy(),
+            "files": files_used.copy()
         }
 
 
